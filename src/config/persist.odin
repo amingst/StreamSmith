@@ -9,10 +9,21 @@ import "core:strings"
 App_Config_DTO :: struct {
     version:        int,
     active_show_id: string,
+    remote:         Remote_DTO,
+}
+
+Remote_DTO :: struct {
+    enabled:         bool,
+    port:            int,
+    allowed_origins: []string,
 }
 
 destroy_app_config :: proc(cfg: ^App_Config) {
     delete(cfg.active_show_id)
+    for origin in cfg.remote.allowed_origins {
+        delete(origin)
+    }
+    delete(cfg.remote.allowed_origins)
     cfg^ = {}
 }
 
@@ -20,6 +31,11 @@ save_app_config :: proc(cfg: ^App_Config, path: string) -> bool {
     dto := App_Config_DTO{
         version        = CURRENT_VERSION,
         active_show_id = cfg.active_show_id,
+        remote         = {
+            enabled         = cfg.remote.enabled,
+            port            = cfg.remote.port,
+            allowed_origins = cfg.remote.allowed_origins,
+        },
     }
     data, merr := json.marshal(dto, {pretty = true}, context.temp_allocator)
     if merr != nil {
@@ -46,7 +62,11 @@ load_app_config :: proc(cfg: ^App_Config, path: string) -> bool {
         return false
     }
 
-    dto: App_Config_DTO
+    // Pre-filled with the defaults: unmarshal only writes the keys the file
+    // has, so a config from before remote control still comes out sane. Adding
+    // an optional section like this doesn't need a version bump.
+    defaults := default_remote_config()
+    dto := App_Config_DTO{remote = {enabled = defaults.enabled, port = defaults.port}}
     if perr := json.unmarshal(data, &dto, allocator = context.temp_allocator); perr != nil {
         log.errorf("app config parse failed: %v (%v)", path, perr)
         return false
@@ -59,5 +79,21 @@ load_app_config :: proc(cfg: ^App_Config, path: string) -> bool {
 
     delete(cfg.active_show_id)
     cfg.active_show_id = strings.clone(dto.active_show_id)
+
+    cfg.remote.enabled = dto.remote.enabled
+    cfg.remote.port = dto.remote.port
+    if cfg.remote.port < 1 || cfg.remote.port > 65535 {
+        log.warnf("app config: remote port %v is out of range, using %v", dto.remote.port, DEFAULT_REMOTE_PORT)
+        cfg.remote.port = DEFAULT_REMOTE_PORT
+    }
+    for origin in cfg.remote.allowed_origins {
+        delete(origin)
+    }
+    delete(cfg.remote.allowed_origins)
+    origins := make([]string, len(dto.remote.allowed_origins))
+    for origin, i in dto.remote.allowed_origins {
+        origins[i] = strings.clone(origin)
+    }
+    cfg.remote.allowed_origins = origins
     return true
 }

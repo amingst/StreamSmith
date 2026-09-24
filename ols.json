@@ -14,7 +14,8 @@
 		{ "name": "flv", "path": "libs/flv"},
 		{ "name": "encode", "path": "src/encode"},
 		{ "name": "wic", "path": "libs/wic"},
-		{ "name": "wgc", "path": "libs/wgc"}
+		{ "name": "wgc", "path": "libs/wgc"},
+		{ "name": "websocket", "path": "libs/websocket"}
 	],
 	"enable_semantic_tokens": true,
 	"enable_document_symbols": true,

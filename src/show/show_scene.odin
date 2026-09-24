@@ -49,11 +49,12 @@ remove_scene :: proc(s: ^Show, index: int) -> string {
 // Places an existing show source into a scene at default geometry. Placing
 // the same source_id into multiple scenes is the point -- each placement is
 // its own position/visibility/mute, the source identity stays shared.
+// The placement owns a copy of source_id (destroy_placement frees it).
 place_source :: proc(sc: ^Show_Scene, source_id: string) -> string {
 	id := new_id()
 	append(&sc.sources, Show_Source_Placement{
 		id        = id,
-		source_id = source_id,
+		source_id = strings.clone(source_id),
 		x = 100, y = 100, w = 400, h = 300,
 		order   = len(sc.sources),
 		color   = {0.9, 0.3, 0.2, 1.0},

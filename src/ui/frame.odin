@@ -4,6 +4,7 @@ import "core:fmt"
 import "core:time"
 import im "libs:odin-imgui"
 
+import "../action"
 import "../show"
 
 // Fixed chrome around the dockspace: top bar, left sidebar, bottom status bar.
@@ -65,6 +66,7 @@ draw_top_bar :: proc(
     im.PushStyleVarVec2(.FramePadding, {12 * ui_scale(), TOP_BAR_PAD_Y * ui_scale()})
     im.PushStyleVarVec2(.WindowPadding, {0, 0})
     im.PushStyleVar(.WindowRounding, 0)
+    im.PushStyleVarVec2(.WindowMinSize, {0, 0}) // see draw_status_bar
     im.PushStyleColorVec4(.WindowBg, rgba(SURFACE))
     im.PushStyleColorVec4(.MenuBarBg, rgba(SURFACE))
 
@@ -101,7 +103,7 @@ draw_top_bar :: proc(
     im.End()
 
     im.PopStyleColor(2)
-    im.PopStyleVar(3)
+    im.PopStyleVar(4)
 }
 
 @(private="file")
@@ -127,11 +129,11 @@ draw_sidebar :: proc(state: ^State, pos, size: im.Vec2) {
         // Streaming
         if c.streaming {
             if wide_button(fmt.ctprintf("%s  Stop Stream", ICON_TOWER_BROADCAST), DANGER, 0xf87171, button_h) {
-                c.request = .Stop_Streaming
+                push_action(state.actions, action.Action_Stop_Streaming{})
             }
         } else {
             if wide_button(fmt.ctprintf("%s  Go Live", ICON_TOWER_BROADCAST), PRIMARY, PRIMARY_DEEP, button_h) {
-                c.request = .Start_Streaming
+                push_action(state.actions, action.Action_Start_Streaming{})
             }
         }
 
@@ -142,11 +144,11 @@ draw_sidebar :: proc(state: ^State, pos, size: im.Vec2) {
             im.EndDisabled()
         } else if c.recording {
             if wide_button(fmt.ctprintf("%s  Stop Recording", ICON_STOP), SURFACE_HIGHEST, OUTLINE_VARIANT, button_h) {
-                c.request = .Stop_Recording
+                push_action(state.actions, action.Action_Stop_Recording{})
             }
         } else {
             if wide_button(fmt.ctprintf("%s  Start Recording", ICON_RECORD), SURFACE_HIGHEST, OUTLINE_VARIANT, button_h) {
-                c.request = .Start_Recording
+                push_action(state.actions, action.Action_Start_Recording{})
             }
         }
 
@@ -180,6 +182,11 @@ draw_status_bar :: proc(state: ^State, pos, size: im.Vec2) {
     im.SetNextWindowSize(size)
     im.PushStyleVar(.WindowRounding, 0)
     im.PushStyleVarVec2(.WindowPadding, {16 * scale, 4 * scale})
+    // The status bar is thinner than style.WindowMinSize, and ImGui would grow
+    // it past the bottom of the viewport. With multi-viewport on, a window that
+    // doesn't fit the host viewport is given its own OS window -- which is how
+    // the bar ended up floating loose instead of sitting in the frame.
+    im.PushStyleVarVec2(.WindowMinSize, {0, 0})
     im.PushStyleColorVec4(.WindowBg, rgba(SURFACE_LOWEST))
 
     if im.Begin("##StatusBar", nil, CHROME_FLAGS) {
@@ -205,7 +212,7 @@ draw_status_bar :: proc(state: ^State, pos, size: im.Vec2) {
     im.End()
 
     im.PopStyleColor()
-    im.PopStyleVar(2)
+    im.PopStyleVar(3)
 }
 
 PANEL_GUTTER   :: 6  // dock-window padding; becomes the gap between cards

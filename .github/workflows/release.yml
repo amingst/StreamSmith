@@ -33,11 +33,28 @@ jobs:
         run: build-release.bat
         shell: cmd
 
+      - name: Build Stream Deck plugin
+        run: build-streamdeck.bat
+        shell: cmd
+
+      # Elgato's CLI validates the plugin as it packs, so it is the only
+      # packaging path. Node is needed here, never on a user's machine.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Pack Stream Deck plugin
+        shell: pwsh
+        run: |
+          npm install -g @elgato/cli@latest
+          streamdeck pack streamdeck/com.streamsmith.remote.sdPlugin --force
+
       - name: Package
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist
           Compress-Archive -Path build/StreamSmith.exe -DestinationPath "dist/StreamSmith-${{ github.ref_name }}-win64.zip"
+          Copy-Item com.streamsmith.remote.streamDeckPlugin "dist/com.streamsmith.remote-${{ github.ref_name }}.streamDeckPlugin"
 
       - name: Remove any existing release for this tag
         shell: pwsh
@@ -51,6 +68,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.zip
+          files: |
+            dist/*.zip
+            dist/*.streamDeckPlugin
           prerelease: true
           generate_release_notes: true

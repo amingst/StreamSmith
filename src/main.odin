@@ -16,7 +16,9 @@ import "libs:wgc"
 import time "core:time"
 
 // Import from platform module
+import "action"
 import "app"
+import "remote"
 import "config"
 import "platform"
 import "render"
@@ -315,7 +317,33 @@ main :: proc() {
 	}
 	defer wgc.wgc_shutdown()
 
-    ui_state := ui.init_state(&show_cfg, APP_VERSION)
+	// UI, and later hotkeys and the remote server, push actions here; the main
+	// loop dispatches them once per frame.
+	actions: action.Envelope_Queue
+	action.queue_init(&actions)
+	action_batch := make([dynamic]action.Envelope, 0, 16, actions.allocator)
+	defer action.queue_destroy(&actions, &action_batch)
+
+	// Owned; set by Set_Scene and repaired by app.ensure_active_scene.
+	active_scene_id: string
+	defer delete(active_scene_id)
+
+	// Remote control. The server pushes onto the same queue as the UI, so it
+	// must stop before the queue (and before the show and audio) goes away --
+	// this defer is registered after the queue's, so it runs first.
+	remote_server: remote.Server
+	remote_running := false
+	defer if remote_running do remote.server_stop(&remote_server)
+
+	// Answers remote requests and turns each frame's state change into events.
+	// With no server it does nothing.
+	remote_bridge: app.Remote_Bridge
+	app.bridge_init(&remote_bridge, nil)
+	defer app.bridge_destroy(&remote_bridge)
+
+	start_remote(&remote_server, &remote_running, &remote_bridge, &app_cfg.remote, &actions)
+
+    ui_state := ui.init_state(APP_VERSION, &actions)
 	clear_color := im.Vec4{0.45, 0.55, 0.60, 1.00}
     defer ui.destroy(&ui_state)
 
@@ -383,16 +411,43 @@ main :: proc() {
 			}
 		}
 
+		// The Remote tab edited app.json: persist it and bounce the server.
+		if ui_state.settings.remote_dirty {
+			ui_state.settings.remote_dirty = false
+			if paths.app_config != "" {
+				config.save_app_config(&app_cfg, paths.app_config)
+			}
+			start_remote(&remote_server, &remote_running, &remote_bridge, &app_cfg.remote, &actions)
+		}
+
 		// Service a pending show request.
 		if req := ui_state.shows.request; req != .None {
 			app.handle_show_request(req, &ui_state.shows, &show_cfg, &app_cfg, &paths, &show_infos)
 		}
 
-		// Service a pending recording/streaming request.
-		if req := ui_state.controls.request; req != .None {
+		// Dispatch queued actions. Runs after the show request, so actions aimed
+		// at a show that was just switched away from fail with Not_Found.
+		{
 			pre_blocks := audio.mix_blocks_emitted()
-			app.handle_controls_request(req, &ui_state.controls, &output,
-				&paths, &preview_target, show_cfg.video.fps, show.ensure_output(&show_cfg)^, log_sink)
+			// Rebuilt each frame: a show switch replaces show_cfg.
+			dispatch_ctx := app.Dispatch_Context{
+				output          = &output,
+				paths           = &paths,
+				target          = &preview_target,
+				show_cfg        = &show_cfg,
+				active_scene_id = &active_scene_id,
+				log_sink        = log_sink,
+			}
+			action.queue_drain(&actions, &action_batch)
+			for &env in action_batch {
+				result := app.dispatch_action(&env, &dispatch_ctx) // failures are logged by dispatch
+				// Before the release: the reply handle and the action's
+				// strings are still alive here.
+				app.bridge_respond(&remote_bridge, &env, result)
+			}
+			action.queue_release(&actions, &action_batch)
+			app.ensure_active_scene(&active_scene_id, &show_cfg)
+
 			// Attaching a new encoder resets the block counter; reset diag snapshots to match.
 			if audio.mix_blocks_emitted() < pre_blocks {
 				audio_diag_last_blocks = 0
@@ -418,6 +473,10 @@ main :: proc() {
 			log.info("recording finalized")
 		}
 
+		// Snapshot, events and the state.get copy. After the sink reaping above,
+		// so a finished finalize is reported in the frame it happens.
+		app.bridge_update(&remote_bridge, &show_cfg, active_scene_id, &output)
+
 		// Neutral fallback clear color -- Show_Scene has no per-scene color
 		// (that was a scene.Collection-only cosmetic, dropped in the show model).
 		scene_clear := [4]f32{0.10, 0.10, 0.12, 1.0}
@@ -425,7 +484,7 @@ main :: proc() {
 		// Composite the scene into the offscreen target before ImGui's frame starts.
 		quads := make([dynamic]render.Quad, context.temp_allocator)
 		inputs := make([dynamic]audio.Mix_Input, context.temp_allocator)
-		show.service_show(&show_cfg, ui_state.scenes.selected_id, win.device, win.device_context, log_sink, &quads, &inputs)
+		show.service_show(&show_cfg, active_scene_id, win.device, win.device_context, log_sink, &quads, &inputs)
 		render.draw_scene(win.device_context, &preview_target, &pipeline, quads[:], scene_clear)
 
 		// -- Audio mixer --------------------------------------------------
@@ -502,8 +561,10 @@ main :: proc() {
         ui_state.controls.recording = output.recording
         ui_state.controls.streaming = output.streaming
         ui_state.controls.finalizing = output.finalizing_sink != nil
+        ui_state.scenes.active_id = active_scene_id
+        ui_state.settings.remote_status = remote_status_line(&app_cfg.remote, remote_running)
 
-        ui.draw(&ui_state, &show_cfg, &clear_color, preview_tex, outputs, show_infos,
+        ui.draw(&ui_state, &show_cfg, &app_cfg, &clear_color, preview_tex, outputs, show_infos,
             f32(preview_target.width), f32(preview_target.height), audio_devices)
 
 		// Rendering
@@ -582,4 +643,50 @@ main :: proc() {
 		log.info("save on exit")
 		show.save_show(paths.shows, &show_cfg)
 	}
+}
+
+// Starts, restarts or stops the remote server to match cfg. Safe to call with
+// the server already running: it is stopped first.
+@(private="file")
+start_remote :: proc(
+	server:  ^remote.Server,
+	running: ^bool,
+	bridge:  ^app.Remote_Bridge,
+	cfg:     ^config.Remote_Config,
+	queue:   ^action.Envelope_Queue,
+) {
+	if running^ {
+		remote.server_stop(server)
+		running^ = false
+	}
+	app.bridge_set_server(bridge, nil)
+
+	if !cfg.enabled {
+		log.info("remote control is disabled in the app settings")
+		return
+	}
+
+	server^ = remote.server_init(remote.Server_Config{
+		port            = u16(cfg.port),
+		allowed_origins = cfg.allowed_origins,
+		server_name     = REMOTE_SERVER_NAME,
+	}, queue)
+
+	running^ = remote.server_start(server)
+	if running^ {
+		app.bridge_set_server(bridge, server)
+		log.infof("remote control listening on ws://127.0.0.1:%v/", cfg.port)
+	} else {
+		log.errorf("remote control could not listen on port %v (already in use?); continuing without it", cfg.port)
+	}
+}
+
+// Shown in the settings modal's Remote tab.
+@(private="file")
+remote_status_line :: proc(cfg: ^config.Remote_Config, running: bool) -> string {
+	switch {
+	case !cfg.enabled: return "Not running."
+	case running:      return fmt.tprintf("Listening on ws://127.0.0.1:%v/", cfg.port)
+	}
+	return fmt.tprintf("Port %v is unavailable -- another app may be using it.", cfg.port)
 }

@@ -1,6 +1,7 @@
 package ui
 
 import im "libs:odin-imgui"
+import "../action"
 import "../show"
 import "core:fmt"
 import "core:math"
@@ -19,12 +20,12 @@ audio_src_label :: proc (name: string) -> cstring {
     return fmt.ctprintf("%v", name)
 }
 
-draw_mixer :: proc(state: ^Mixer_State, scenes: ^Scenes_State, s: ^show.Show) {
+draw_mixer :: proc(state: ^Mixer_State, scenes: ^Scenes_State, s: ^show.Show, actions: ^action.Envelope_Queue) {
     p := panel_begin("Audio Mixer", "AUDIO MIXER")
     if p.visible {
         panel_header_end()
 
-        sc := show.find_scene(s, scenes.selected_id)
+        sc := show.find_scene(s, scenes.active_id)
         if sc == nil {
             im.TextDisabled("No Scenes Selected")
         } else {
@@ -71,14 +72,18 @@ draw_mixer :: proc(state: ^Mixer_State, scenes: ^Scenes_State, s: ^show.Show) {
                 im.PushStyleColorVec4(.ButtonActive, rgba(OUTLINE_VARIANT))
                 im.PushStyleColorVec4(.Text, rgba(muted ? DANGER : TEXT_VARIANT))
                 if im.Button(muted ? ICON_VOLUME_XMARK : ICON_VOLUME_HIGH, {mute_w, mute_w}) {
-                    d.params.muted = !d.params.muted
+                    push_action(actions, action.Action_Toggle_Mute{source_id = src.id})
                 }
                 im.PopStyleColor(4)
 
                 draw_meter(muted ? -60 : db)
 
                 im.PushStyleColorVec4(.FrameBg, rgba(SLATE_SURFACE))
-                im.SliderFloat("##vol", &d.params.volume, 0, 1, "%.2f")
+                // Edit a copy; the change lands next frame when main dispatches it.
+                volume := d.params.volume
+                if im.SliderFloat("##vol", &volume, 0, 1, "%.2f") {
+                    push_action(actions, action.Action_Set_Volume{source_id = src.id, volume = volume})
+                }
                 im.PopStyleColor()
 
                 im.Spacing()

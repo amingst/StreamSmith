@@ -5,6 +5,7 @@ import "core:fmt"
 import "core:log"
 import "core:strings"
 import im "libs:odin-imgui"
+import "../action"
 import "../capture"
 import "../show"
 import "../audio"
@@ -165,7 +166,7 @@ draw_output_picker :: proc(d: ^show.Display_Source_Data, outputs: []capture.Outp
 
 // Device combo plus volume/mute. An unplugged device shows as unavailable.
 @(private="file")
-draw_audio_picker :: proc(d: ^show.Audio_Source_Data, devices: []audio.Device_Info) {
+draw_audio_picker :: proc(source_id: string, d: ^show.Audio_Source_Data, devices: []audio.Device_Info, actions: ^action.Envelope_Queue) {
     matching := audio_devices_for(devices, d.is_loopback)
     if len(matching) == 0 {
         im.TextDisabled("No matching audio devices")
@@ -196,8 +197,15 @@ draw_audio_picker :: proc(d: ^show.Audio_Source_Data, devices: []audio.Device_In
         }
     }
 
-    im.SliderFloat("Volume", &d.volume, 0, 1)
-    im.Checkbox("Muted", &d.muted)
+    // Edit copies; mute and volume only change through actions.
+    volume := d.volume
+    if im.SliderFloat("Volume", &volume, 0, 1) {
+        push_action(actions, action.Action_Set_Volume{source_id = source_id, volume = volume})
+    }
+    muted := d.muted
+    if im.Checkbox("Muted", &muted) {
+        push_action(actions, action.Action_Set_Mute{source_id = source_id, muted = muted})
+    }
 }
 
 // Window picker: stops the old capture and stores the new identity, but never
@@ -292,6 +300,7 @@ draw_sources :: proc(
     outputs: []capture.Output_Info,
     canvas_w, canvas_h: f32,
     devices: []audio.Device_Info,
+    actions: ^action.Envelope_Queue,
 ) {
     p := panel_begin("Sources", "SOURCES")
     if p.visible {
@@ -301,7 +310,7 @@ draw_sources :: proc(
         add_source := panel_header_button("+", "Add source")
         panel_header_end()
 
-        sc := show.find_scene(s, scenes.selected_id)
+        sc := show.find_scene(s, scenes.active_id)
         if sc == nil {
             im.TextDisabled("No scene selected")
         } else {
@@ -486,7 +495,7 @@ draw_sources :: proc(
                 im.PushStyleColorVec4(.ButtonActive, rgba(OUTLINE_VARIANT))
                 im.PushStyleColorVec4(.Text, rgba(placement.visible ? TEXT_VARIANT : OUTLINE))
                 if im.Button(placement.visible ? ICON_EYE : ICON_EYE_SLASH, {eye, eye}) {
-                    placement.visible = !placement.visible
+                    push_action(actions, action.Action_Toggle_Source_Visible{scene_id = sc.id, source_id = placement.source_id})
                 }
                 im.PopStyleColor(4)
 
@@ -514,7 +523,7 @@ draw_sources :: proc(
                     case show.Display_Source_Data:
                         draw_output_picker(&d, outputs)
                     case show.Audio_Source_Data:
-                        draw_audio_picker(&d, devices)
+                        draw_audio_picker(src.id, &d, devices, actions)
                     case show.Image_Source_Data:
                         if d.path != "" {
                             im.TextWrapped(fmt.ctprintf("Path: %v", d.path))

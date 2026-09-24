@@ -1,0 +1,149 @@
+{
+	"$schema": "https://schemas.elgato.com/streamdeck/plugins/manifest.json",
+	"Name": "StreamSmith",
+	"Version": "0.1.0.0",
+	"Author": "StreamSmith",
+	"Description": "Control StreamSmith from your Stream Deck: switch scenes, start and stop streaming and recording, mute sources and hide layers.",
+	"Category": "StreamSmith",
+	"CategoryIcon": "images/category",
+	"Icon": "images/plugin",
+	"URL": "https://github.com/amingst/StreamSmith",
+	"SDKVersion": 3,
+	"Software": {
+		"MinimumVersion": "6.9"
+	},
+	"OS": [
+		{
+			"Platform": "windows",
+			"MinimumVersion": "10"
+		}
+	],
+	"UUID": "com.streamsmith.remote",
+	"CodePath": "bin/streamsmith-streamdeck.exe",
+	"CodePathWin": "bin/streamsmith-streamdeck.exe",
+	"PropertyInspectorPath": "pi/inspector.html",
+	"Actions": [
+		{
+			"UUID": "com.streamsmith.remote.scene",
+			"Name": "Switch Scene",
+			"Tooltip": "Make a StreamSmith scene the live scene.",
+			"Icon": "images/action_scene",
+			"Controllers": [
+				"Keypad"
+			],
+			"DisableAutomaticStates": true,
+			"PropertyInspectorPath": "pi/inspector.html",
+			"States": [
+				{
+					"Image": "images/key_scene_off",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "images/key_scene_on",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"UUID": "com.streamsmith.remote.streaming",
+			"Name": "Toggle Streaming",
+			"Tooltip": "Start or stop the stream.",
+			"Icon": "images/action_streaming",
+			"Controllers": [
+				"Keypad"
+			],
+			"DisableAutomaticStates": true,
+			"PropertyInspectorPath": "pi/inspector.html",
+			"States": [
+				{
+					"Image": "images/key_streaming_off",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "images/key_streaming_on",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"UUID": "com.streamsmith.remote.recording",
+			"Name": "Toggle Recording",
+			"Tooltip": "Start or stop recording.",
+			"Icon": "images/action_recording",
+			"Controllers": [
+				"Keypad"
+			],
+			"DisableAutomaticStates": true,
+			"PropertyInspectorPath": "pi/inspector.html",
+			"States": [
+				{
+					"Image": "images/key_recording_off",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "images/key_recording_on",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"UUID": "com.streamsmith.remote.mute",
+			"Name": "Toggle Mute",
+			"Tooltip": "Mute or unmute an audio source.",
+			"Icon": "images/action_mute",
+			"Controllers": [
+				"Keypad"
+			],
+			"DisableAutomaticStates": true,
+			"PropertyInspectorPath": "pi/inspector.html",
+			"States": [
+				{
+					"Image": "images/key_mute_off",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "images/key_mute_on",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"UUID": "com.streamsmith.remote.volume",
+			"Name": "Volume Up / Down",
+			"Tooltip": "Raise or lower an audio source's volume by a step.",
+			"Icon": "images/action_volume",
+			"Controllers": [
+				"Keypad"
+			],
+			"DisableAutomaticStates": true,
+			"PropertyInspectorPath": "pi/inspector.html",
+			"States": [
+				{
+					"Image": "images/key_volume_up",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"UUID": "com.streamsmith.remote.visibility",
+			"Name": "Toggle Source",
+			"Tooltip": "Show or hide a source in a scene.",
+			"Icon": "images/action_visibility",
+			"Controllers": [
+				"Keypad"
+			],
+			"DisableAutomaticStates": true,
+			"PropertyInspectorPath": "pi/inspector.html",
+			"States": [
+				{
+					"Image": "images/key_visibility_on",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "images/key_visibility_off",
+					"TitleAlignment": "bottom"
+				}
+			]
+		}
+	]
+}

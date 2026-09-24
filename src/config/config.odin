@@ -12,6 +12,23 @@ CURRENT_VERSION :: 1
 App_Config :: struct {           // app.json
     version:        int,
     active_show_id: string,
+    remote:         Remote_Config,
+}
+
+// Remote control (Stream Deck and other local clients), app-wide rather than
+// per show. See docs/remote-protocol.md.
+Remote_Config :: struct {
+    enabled:         bool,
+    port:            int,
+    allowed_origins: []string, // owned; exact Origin headers allowed to connect
+}
+
+DEFAULT_REMOTE_PORT :: 4460
+
+// Used for a missing or unreadable app.json, and as the base the loader fills
+// in over, so a config written before remote control existed still gets these.
+default_remote_config :: proc() -> Remote_Config {
+    return Remote_Config{enabled = true, port = DEFAULT_REMOTE_PORT}
 }
 
 // Every field is an owned string; release with destroy_paths.

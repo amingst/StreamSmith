@@ -27,6 +27,7 @@ open_log_file :: proc(sink: ^applog.Sink, paths: ^config.Paths) {
 
 // Loads app.json (missing/invalid file just leaves app_cfg zero-valued).
 load_app_config :: proc(paths: ^config.Paths) -> (app_cfg: config.App_Config) {
+	app_cfg.remote = config.default_remote_config() // load fills these in when the file has them
 	if paths.app_config != "" {
 		config.load_app_config(&app_cfg, paths.app_config)
 	}

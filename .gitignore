@@ -4,3 +4,8 @@ libs/odin-imgui/build/
 libs/odin-imgui/imgui_windows_x64.lib
 .claude/settings.local.json
 experiments/
+
+# Stream Deck plugin build output
+streamdeck/com.streamsmith.remote.sdPlugin/bin/
+*.streamDeckPlugin
+app.pdb

@@ -4,6 +4,7 @@ import "core:fmt"
 import "core:strings"
 import im "libs:odin-imgui"
 import "../capture"
+import "../config"
 import "../show"
 
 Save_Trigger :: enum {
@@ -26,6 +27,15 @@ Settings_State :: struct {
     stream_url_buf:      [256]u8,
     stream_key_buf:      [128]u8,
     stream_bitrate_kbps: int,
+
+    // Remote tab. These edit app.json rather than the show, so Apply/OK writes
+    // them into app_cfg and raises remote_dirty; main saves and restarts the
+    // server. remote_status is mirrored from main each frame.
+    remote_enabled:     bool,
+    remote_port:        i32,
+    remote_origins_buf: [512]u8,
+    remote_dirty:       bool,
+    remote_status:      string,
 }
 
 init_settings_state :: proc() -> Settings_State {
@@ -82,13 +92,14 @@ draw_menus :: proc(
 draw_modals :: proc(
     state: ^State,
     show_cfg: ^show.Show,
+    app_cfg: ^config.App_Config,
     outputs: []capture.Output_Info,
     streaming: bool,
 ) {
     if state.show_settings && !im.IsPopupOpen("Settings") {
         im.OpenPopup("Settings")
     }
-    draw_settings(state, show_cfg, outputs, streaming)
+    draw_settings(state, show_cfg, app_cfg, outputs, streaming)
 
     draw_show_popups(&state.shows, show_cfg.name)
 }
@@ -120,7 +131,7 @@ draw_file_menu :: proc(
 }
 
 @(private="file")
-draw_settings :: proc(state: ^State, show_cfg: ^show.Show, outputs: []capture.Output_Info, streaming: bool) {
+draw_settings :: proc(state: ^State, show_cfg: ^show.Show, app_cfg: ^config.App_Config, outputs: []capture.Output_Info, streaming: bool) {
     s := &state.settings
     presets := build_presets(outputs)
     out := show.ensure_output(show_cfg)
@@ -133,6 +144,10 @@ draw_settings :: proc(state: ^State, show_cfg: ^show.Show, outputs: []capture.Ou
         seed_name_buf(s.stream_url_buf[:], rtmp_data.url)
         seed_name_buf(s.stream_key_buf[:], rtmp_data.key)
         s.stream_bitrate_kbps = out.bitrate_kbps
+
+        s.remote_enabled = app_cfg.remote.enabled
+        s.remote_port = i32(app_cfg.remote.port)
+        seed_origins_buf(s.remote_origins_buf[:], app_cfg.remote.allowed_origins)
     }
     s.was_open = state.show_settings
 
@@ -168,6 +183,24 @@ draw_settings :: proc(state: ^State, show_cfg: ^show.Show, outputs: []capture.Ou
             if im.BeginTabItem("Audio") {
                 im.EndTabItem()
             }
+            if im.BeginTabItem("Remote") {
+                im.Checkbox("Enable remote control", &s.remote_enabled)
+                im.BeginDisabled(!s.remote_enabled)
+                im.InputInt("Port", &s.remote_port)
+
+                im.Dummy({0, 6 * ui_scale()})
+                im.TextDisabled("Allowed browser origins, one per line.")
+                im.TextDisabled("Leave empty unless a web page needs to connect.")
+                im.InputTextMultiline("##origins", cstring(&s.remote_origins_buf[0]), len(s.remote_origins_buf),
+                    {0, 4 * im.GetTextLineHeight()})
+                im.EndDisabled()
+
+                if s.remote_status != "" {
+                    im.Dummy({0, 6 * ui_scale()})
+                    im.TextUnformatted(fmt.ctprintf("%s", s.remote_status))
+                }
+                im.EndTabItem()
+            }
             if im.BeginTabItem("Output") {
                 // No live-reconcile for stream settings, so disable editing mid-stream.
                 if streaming {
@@ -193,6 +226,7 @@ draw_settings :: proc(state: ^State, show_cfg: ^show.Show, outputs: []capture.Ou
         if im.Button("OK") {
             show_cfg.video = s.pending
             apply_stream_settings(s, out)
+            apply_remote_settings(s, app_cfg)
             s.save_request = .Settings_OK
             state.show_settings = false
             im.CloseCurrentPopup()
@@ -206,11 +240,81 @@ draw_settings :: proc(state: ^State, show_cfg: ^show.Show, outputs: []capture.Ou
         if im.Button("Apply") {
             show_cfg.video = s.pending
             apply_stream_settings(s, out)
+            apply_remote_settings(s, app_cfg)
             s.save_request = .Settings_Apply
         }
 
         im.EndPopup()
     }
+}
+
+// Writes the Remote tab into app_cfg and flags it for main, which saves
+// app.json and restarts the server. Nothing happens when nothing changed, so
+// Apply on another tab doesn't bounce the server.
+@(private="file")
+apply_remote_settings :: proc(s: ^Settings_State, app_cfg: ^config.App_Config) {
+    port := int(s.remote_port)
+    if port < 1 || port > 65535 {
+        port = config.DEFAULT_REMOTE_PORT
+        s.remote_port = i32(port)
+    }
+
+    origins := parse_origins(s.remote_origins_buf[:])
+    defer delete(origins)
+
+    changed := app_cfg.remote.enabled != s.remote_enabled || app_cfg.remote.port != port
+    if !changed && len(origins) != len(app_cfg.remote.allowed_origins) {
+        changed = true
+    }
+    if !changed {
+        for origin, i in origins {
+            if origin != app_cfg.remote.allowed_origins[i] {
+                changed = true
+                break
+            }
+        }
+    }
+    if !changed do return
+
+    for origin in app_cfg.remote.allowed_origins {
+        delete(origin)
+    }
+    delete(app_cfg.remote.allowed_origins)
+
+    owned := make([]string, len(origins))
+    for origin, i in origins {
+        owned[i] = strings.clone(origin)
+    }
+    app_cfg.remote.enabled = s.remote_enabled
+    app_cfg.remote.port = port
+    app_cfg.remote.allowed_origins = owned
+    s.remote_dirty = true
+}
+
+// One origin per line; blanks and stray whitespace are dropped. The returned
+// slice borrows from buf.
+@(private="file")
+parse_origins :: proc(buf: []u8) -> [dynamic]string {
+    origins := make([dynamic]string, 0, 4, context.temp_allocator)
+    text := string(buf[:])
+    if end := strings.index_byte(text, 0); end >= 0 do text = text[:end]
+    for line in strings.split_lines_iterator(&text) {
+        trimmed := strings.trim_space(line)
+        if trimmed != "" do append(&origins, trimmed)
+    }
+    return origins
+}
+
+@(private="file")
+seed_origins_buf :: proc(buf: []u8, origins: []string) {
+    n := 0
+    for origin in origins {
+        if n + len(origin) + 1 >= len(buf) do break
+        n += copy(buf[n:], origin)
+        buf[n] = '\n'
+        n += 1
+    }
+    buf[n] = 0
 }
 
 // Frees the output's current RTMP strings before cloning the edited buffers over them.

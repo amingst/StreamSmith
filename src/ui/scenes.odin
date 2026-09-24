@@ -4,10 +4,11 @@ import "core:log"
 import "core:strings"
 import im "libs:odin-imgui"
 
+import "../action"
 import "../show"
 
 Scenes_State :: struct {
-    selected_id: string, // "" == nothing selected
+    active_id:   string, // mirrored from main each frame; "" == no scene. Change it by pushing Set_Scene.
     name_buf:    [128]u8,
 }
 
@@ -15,7 +16,7 @@ init_scenes_state :: proc() -> Scenes_State {
     return Scenes_State{}
 }
 
-draw_scenes :: proc(state: ^Scenes_State, s: ^show.Show) {
+draw_scenes :: proc(state: ^Scenes_State, s: ^show.Show, actions: ^action.Envelope_Queue) {
     p := panel_begin("Scenes", "SCENES")
     if p.visible {
         add_scene := panel_header_button("+", "Add scene")
@@ -38,7 +39,8 @@ draw_scenes :: proc(state: ^Scenes_State, s: ^show.Show) {
                 if len(name) == 0 {
                     log.debug("empty scene name rejected")
                 } else {
-                    state.selected_id = show.create_scene(s, name)
+                    // A new scene goes live right away, as before.
+                    push_action(actions, action.Action_Set_Scene{scene_id = show.create_scene(s, name)})
                     state.name_buf = {}
                     im.CloseCurrentPopup()
                 }
@@ -55,8 +57,8 @@ draw_scenes :: proc(state: ^Scenes_State, s: ^show.Show) {
 
         for &sc, i in s.scenes {
             label := strings.clone_to_cstring(sc.name, context.temp_allocator)
-            if im.Selectable(label, state.selected_id == sc.id) {
-                state.selected_id = sc.id
+            if im.Selectable(label, state.active_id == sc.id) && state.active_id != sc.id {
+                push_action(actions, action.Action_Set_Scene{scene_id = sc.id})
             }
 
             if im.BeginPopupContextItem() {
@@ -68,16 +70,20 @@ draw_scenes :: proc(state: ^Scenes_State, s: ^show.Show) {
         }
 
         if to_delete >= 0 {
-            removed_id := show.remove_scene(s, to_delete)
+            // Compare before removing: remove_scene frees the scene's id.
+            was_active := s.scenes[to_delete].id == state.active_id
+            show.remove_scene(s, to_delete)
 
-            // Selection is by id, so it only needs repair when the removed scene
-            // was the selected one. Prefer whatever slid into the vacated slot,
-            // else the new last scene, else nothing.
-            if state.selected_id == removed_id {
-                state.selected_id = ""
+            if was_active {
+                // Deleting the live scene moves it to whatever slid into the
+                // vacated slot, else the new last scene. With no scenes left,
+                // main clears it (app.ensure_active_scene).
                 if len(s.scenes) > 0 {
-                    state.selected_id = s.scenes[min(to_delete, len(s.scenes) - 1)].id
+                    neighbour := s.scenes[min(to_delete, len(s.scenes) - 1)].id
+                    push_action(actions, action.Action_Set_Scene{scene_id = neighbour})
                 }
+                // The mirror names a deleted scene for the rest of this frame.
+                state.active_id = ""
             }
         }
     }

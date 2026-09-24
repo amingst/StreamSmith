@@ -2,18 +2,9 @@ package ui
 
 import "core:time"
 
-Controls_Request :: enum {
-    None,
-    Start_Recording,
-    Stop_Recording,
-    Start_Streaming,
-    Stop_Streaming,
-}
-
-// Requests are raised here and consumed/cleared by main, which owns the encoder.
-// Drawn by the sidebar -- see frame.odin.
+// Output state mirrored from main; the sidebar's buttons push output actions
+// (see frame.odin), which main dispatches since it owns the encoder.
 Controls_State :: struct {
-    request:   Controls_Request,
     recording: bool, // mirrored from main each frame; ui can't query the encoder directly
     streaming: bool, // mirrored from main each frame
     finalizing: bool, // previous recording's MP4 sink still draining/finalizing

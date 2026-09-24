@@ -137,7 +137,7 @@ begin_drag :: proc(
 ) {
     mouse := im.GetMousePos()
     canvas_pos := screen_to_canvas(state, canvas_w, canvas_h, {mouse.x, mouse.y})
-    sc := show.find_scene(s, scenes.selected_id)
+    sc := show.find_scene(s, scenes.active_id)
     if sc != nil {
         if p := show.find_placement(sc, sources.selected_id); p != nil {
             positions := handle_positions(state, canvas_w, canvas_h, p)
@@ -183,7 +183,7 @@ apply_drag :: proc(
     mouse := im.GetMousePos()
     cp := screen_to_canvas(state, canvas_w, canvas_h, {mouse.x, mouse.y})
 
-    sc := show.find_scene(s, scenes.selected_id)
+    sc := show.find_scene(s, scenes.active_id)
     if sc == nil do return
     p := show.find_placement(sc, state.drag_id)
     if p == nil do return
@@ -243,7 +243,7 @@ draw_overlay :: proc(
     s: ^show.Show,
     canvas_w, canvas_h: f32,
 ) {
-            if sc := show.find_scene(s, scenes.selected_id); sc != nil {
+            if sc := show.find_scene(s, scenes.active_id); sc != nil {
                 if p := show.find_placement(sc, sources.selected_id); p != nil {
                     dl := im.GetWindowDrawList()
                     positions := handle_positions(
