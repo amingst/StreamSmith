@@ -15,7 +15,10 @@ import "../../src/remote/protocol"
 
 RECONNECT_MIN :: 1 * time.Second
 RECONNECT_MAX :: 10 * time.Second
-READ_TIMEOUT  :: 1 * time.Second
+
+// Short, because link_poll runs in the same loop that serves the Stream Deck
+// socket: a long timeout here delays every keypress by that much.
+READ_TIMEOUT :: 20 * time.Millisecond
 
 Link_State :: enum {
 	Offline,       // not connected, or connecting

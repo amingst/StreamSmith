@@ -66,6 +66,7 @@ draw_top_bar :: proc(
     im.PushStyleVarVec2(.FramePadding, {12 * ui_scale(), TOP_BAR_PAD_Y * ui_scale()})
     im.PushStyleVarVec2(.WindowPadding, {0, 0})
     im.PushStyleVar(.WindowRounding, 0)
+    im.PushStyleVarVec2(.WindowMinSize, {0, 0}) // see draw_status_bar
     im.PushStyleColorVec4(.WindowBg, rgba(SURFACE))
     im.PushStyleColorVec4(.MenuBarBg, rgba(SURFACE))
 
@@ -102,7 +103,7 @@ draw_top_bar :: proc(
     im.End()
 
     im.PopStyleColor(2)
-    im.PopStyleVar(3)
+    im.PopStyleVar(4)
 }
 
 @(private="file")
@@ -181,6 +182,11 @@ draw_status_bar :: proc(state: ^State, pos, size: im.Vec2) {
     im.SetNextWindowSize(size)
     im.PushStyleVar(.WindowRounding, 0)
     im.PushStyleVarVec2(.WindowPadding, {16 * scale, 4 * scale})
+    // The status bar is thinner than style.WindowMinSize, and ImGui would grow
+    // it past the bottom of the viewport. With multi-viewport on, a window that
+    // doesn't fit the host viewport is given its own OS window -- which is how
+    // the bar ended up floating loose instead of sitting in the frame.
+    im.PushStyleVarVec2(.WindowMinSize, {0, 0})
     im.PushStyleColorVec4(.WindowBg, rgba(SURFACE_LOWEST))
 
     if im.Begin("##StatusBar", nil, CHROME_FLAGS) {
@@ -206,7 +212,7 @@ draw_status_bar :: proc(state: ^State, pos, size: im.Vec2) {
     im.End()
 
     im.PopStyleColor()
-    im.PopStyleVar(2)
+    im.PopStyleVar(3)
 }
 
 PANEL_GUTTER   :: 6  // dock-window padding; becomes the gap between cards

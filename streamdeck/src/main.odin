@@ -18,8 +18,17 @@ import "core:strings"
 import "core:time"
 import ws "libs:websocket"
 
-DECK_READ_TIMEOUT :: 100 * time.Millisecond
-DEFAULT_PORT      :: 4460
+// Both sockets are polled with a short timeout, so an idle loop costs about
+// 2 x DECK_READ_TIMEOUT of latency. Anything longer shows up directly as a
+// delay between pressing a key and StreamSmith acting on it.
+DECK_READ_TIMEOUT :: 20 * time.Millisecond
+
+// A profile switch sends a willAppear for every key at once, so the Stream
+// Deck socket has to be drained, not read one message per pass. The cap keeps
+// a flood from starving the StreamSmith side.
+DECK_BURST :: 64
+
+DEFAULT_PORT :: 4460
 
 Plugin :: struct {
 	deck:    Deck,
@@ -65,22 +74,21 @@ main :: proc() {
 	net.set_option(plugin.deck.sock, .Receive_Timeout, DECK_READ_TIMEOUT)
 
 	for {
-		// 1. Anything the Stream Deck app has to say.
-		msg, err := ws.ws_read_message(&plugin.deck.conn)
-		#partial switch err {
-		case .None:
-			if msg.kind == .Text {
-				if event, ok := parse_deck_event(msg.payload, context.temp_allocator); ok {
-					handle_deck_event(&plugin, event)
-				}
+		// 1. Everything the Stream Deck app has sent since the last pass.
+		for _ in 0 ..< DECK_BURST {
+			msg, err := ws.ws_read_message(&plugin.deck.conn)
+			if err == .Timeout do break // nothing pending, which is the normal case
+			if err != .None {
+				// The Stream Deck app closed the socket or went away: exit, and
+				// it will start us again when it needs us.
+				log_line("deck: connection ended (%v), exiting", err)
+				return
 			}
-		case .Timeout:
-			// Nothing pending, which is the normal case.
-		case:
-			// The Stream Deck app closed the socket or went away: exit, and it
-			// will start us again when it needs us.
-			log_line("deck: connection ended (%v), exiting", err)
-			return
+			if msg.kind != .Text do continue
+			if event, parsed := parse_deck_event(msg.payload, context.temp_allocator); parsed {
+				handle_deck_event(&plugin, event)
+			}
+			free_all(context.temp_allocator) // the event borrows this
 		}
 
 		// 2. StreamSmith: connect when it's time, then drain what arrived.
