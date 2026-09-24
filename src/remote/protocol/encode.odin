@@ -1,6 +1,7 @@
 package protocol
 
 import "core:encoding/json"
+import "core:fmt"
 import "core:math"
 
 encode_welcome :: proc(server: string, allocator := context.allocator) -> []u8 {
@@ -32,6 +33,14 @@ encode_response_ok :: proc(id: i64, result: json.Value = nil, allocator := conte
 	)
 	if err != nil do return nil
 	return data
+}
+
+// Wraps an already-serialized result, so state.get can answer from the
+// published snapshot bytes without parsing them again.
+encode_response_raw :: proc(id: i64, result_json: []u8, allocator := context.allocator) -> []u8 {
+	return transmute([]u8)fmt.aprintf(
+		`{{"type":"response","id":%d,"ok":true,"result":%s}}`,
+		id, string(result_json), allocator = allocator)
 }
 
 encode_response_err :: proc(id: i64, code: Error_Code, message: string, allocator := context.allocator) -> []u8 {

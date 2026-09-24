@@ -58,8 +58,10 @@ dispatch_action :: proc(env: ^action.Envelope, ctx: ^Dispatch_Context) -> Action
 	switch a in env.action {
 	case action.Action_Start_Recording:       result = start_recording(ctx)
 	case action.Action_Stop_Recording:        result = stop_recording(ctx)
+	case action.Action_Toggle_Recording:      result = ctx.output.recording ? stop_recording(ctx) : start_recording(ctx)
 	case action.Action_Start_Streaming:       result = start_streaming(ctx)
 	case action.Action_Stop_Streaming:        result = stop_streaming(ctx)
+	case action.Action_Toggle_Streaming:      result = ctx.output.streaming ? stop_streaming(ctx) : start_streaming(ctx)
 	case action.Action_Set_Scene:             result = set_scene(ctx, a.scene_id)
 	case action.Action_Set_Mute:              result = set_mute(ctx, a.source_id, a.muted)
 	case action.Action_Toggle_Mute:           result = set_mute(ctx, a.source_id, nil)

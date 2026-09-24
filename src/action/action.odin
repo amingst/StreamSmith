@@ -4,8 +4,10 @@ import "core:mem"
 import "core:strings"
 
 Action_Start_Recording :: struct {}
+Action_Toggle_Recording :: struct {}
 Action_Stop_Recording :: struct {}
 Action_Start_Streaming :: struct {}
+Action_Toggle_Streaming :: struct {}
 Action_Stop_Streaming :: struct {}
 Action_Set_Scene :: struct {
 	scene_id: string,
@@ -34,8 +36,10 @@ Action_Toggle_Source_Visible :: struct {
 Action :: union {
 	Action_Start_Recording,
 	Action_Stop_Recording,
+	Action_Toggle_Recording,
 	Action_Start_Streaming,
 	Action_Stop_Streaming,
+	Action_Toggle_Streaming,
 	Action_Set_Scene,
 	Action_Set_Mute,
 	Action_Toggle_Mute,
@@ -61,8 +65,8 @@ clone_action_strings :: proc(a: ^Action, allocator: mem.Allocator) {
 	case Action_Toggle_Source_Visible:
 		v.scene_id  = strings.clone(v.scene_id, allocator)
 		v.source_id = strings.clone(v.source_id, allocator)
-	case Action_Start_Recording, Action_Stop_Recording,
-	     Action_Start_Streaming, Action_Stop_Streaming:
+	case Action_Start_Recording, Action_Stop_Recording, Action_Toggle_Recording,
+	     Action_Start_Streaming, Action_Stop_Streaming, Action_Toggle_Streaming:
 		// no strings
 	}
 }
@@ -84,8 +88,8 @@ free_action_strings :: proc(a: ^Action, allocator: mem.Allocator) {
 	case Action_Toggle_Source_Visible:
 		delete(v.scene_id, allocator)
 		delete(v.source_id, allocator)
-	case Action_Start_Recording, Action_Stop_Recording,
-	     Action_Start_Streaming, Action_Stop_Streaming:
+	case Action_Start_Recording, Action_Stop_Recording, Action_Toggle_Recording,
+	     Action_Start_Streaming, Action_Stop_Streaming, Action_Toggle_Streaming:
 		// no strings
 	}
 }

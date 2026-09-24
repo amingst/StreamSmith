@@ -37,7 +37,8 @@ Message_Kind :: enum {
 Conn_Error :: enum {
 	None,
 	Closed,          // peer sent Close, or the socket ended cleanly
-	Network,         // recv/send failed or timed out
+	Timeout,         // the socket's receive timeout elapsed between messages
+	Network,         // recv/send failed
 	Protocol,        // frame-level violation; close_code carries which
 	Too_Large,       // reassembled message over max_message
 	Bad_Utf8,        // text payload isn't valid UTF-8
@@ -79,7 +80,8 @@ conn_destroy :: proc(c: ^WS_Connection) {
 // out of here: a Ping is answered with a Pong, a Pong sets got_pong, and a
 // Close is echoed and then reported as .Closed with msg filled in.
 //
-// Blocks until a whole message arrives, the socket times out, or it fails.
+// Blocks until a whole message arrives, the socket times out between messages
+// (.Timeout, so the caller can run its keepalive timers), or it fails.
 // On .Protocol, .Too_Large and .Bad_Utf8, c.close_code holds the code to
 // send before closing. msg.payload borrows recv_buf and stays valid until
 // the next call on this connection.
@@ -103,7 +105,7 @@ ws_read_message :: proc(c: ^WS_Connection) -> (msg: Message, err: Conn_Error) {
 				c.close_code = close_code_for(frame_err)
 				return {}, .Protocol
 			}
-			recv_more(c) or_return
+			recv_more_between(c, msg_open) or_return
 		}
 
 		// Clients mask, servers don't; either side sending the wrong thing is
@@ -121,7 +123,7 @@ ws_read_message :: proc(c: ^WS_Connection) -> (msg: Message, err: Conn_Error) {
 
 		need := c.read_pos + header_len + int(h.payload_len)
 		for len(c.recv_buf) < need {
-			recv_more(c) or_return
+			recv_more_between(c, msg_open) or_return
 		}
 
 		payload := c.recv_buf[c.read_pos + header_len:need]
@@ -205,6 +207,12 @@ ws_send_text :: proc(c: ^WS_Connection, s: string) -> Conn_Error {
 	return send_frame(c, .Text, transmute([]u8)s)
 }
 
+// The server rejects binary frames, but a client may need to send them and
+// the tests use it to check that rejection.
+ws_send_binary :: proc(c: ^WS_Connection, payload: []u8) -> Conn_Error {
+	return send_frame(c, .Binary, payload)
+}
+
 ws_send_ping :: proc(c: ^WS_Connection, payload: []u8 = nil) -> Conn_Error {
 	return send_frame(c, .Ping, payload)
 }
@@ -267,10 +275,24 @@ send_all :: proc(sock: net.TCP_Socket, buf: []u8) -> Conn_Error {
 recv_more :: proc(c: ^WS_Connection) -> Conn_Error {
 	chunk: [4 * 1024]u8
 	n, err := net.recv_tcp(c.sock, chunk[:])
+	if err == net.TCP_Recv_Error.Timeout do return .Timeout
 	if err != nil do return .Network
 	if n == 0 do return .Closed
 	append(&c.recv_buf, ..chunk[:n])
 	return .None
+}
+
+// A timeout is only reportable between messages: the reassembly state lives in
+// ws_read_message's locals, so returning mid-message would lose the fragments
+// read so far. Partial *frames* are fine -- they stay in recv_buf and the next
+// call decodes them again from read_pos.
+@(private)
+recv_more_between :: proc(c: ^WS_Connection, msg_open: bool) -> Conn_Error {
+	for {
+		err := recv_more(c)
+		if err == .Timeout && msg_open do continue
+		return err
+	}
 }
 
 @(private)

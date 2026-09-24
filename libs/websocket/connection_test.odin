@@ -544,3 +544,53 @@ client_upgrade_rejects_bad_responses :: proc(t: ^testing.T) {
 		testing.expectf(t, err == c.want, "%q: want %v, got %v", c.response, c.want, err)
 	}
 }
+
+// Nothing to read: the loop gets .Timeout so it can run its keepalive timers,
+// and the connection stays usable.
+@(test)
+read_between_messages_times_out :: proc(t: ^testing.T) {
+	p, ok := conn_pair_open(t)
+	defer conn_pair_close(&p)
+	if !ok do return
+
+	net.set_option(p.lb.server, .Receive_Timeout, 100 * time.Millisecond)
+
+	_, err := ws_read_message(&p.server_ws)
+	testing.expect_value(t, err, Conn_Error.Timeout)
+
+	testing.expect_value(t, ws_send_text(&p.client_ws, "after the timeout"), Conn_Error.None)
+	msg, err2 := ws_read_message(&p.server_ws)
+	testing.expect_value(t, err2, Conn_Error.None)
+	testing.expect_value(t, string(msg.payload), "after the timeout")
+}
+
+// A timeout part-way through a fragmented message can't be reported: the
+// reassembly state is local to ws_read_message. It keeps waiting instead.
+@(test)
+read_waits_through_a_mid_message_timeout :: proc(t: ^testing.T) {
+	p, ok := conn_pair_open(t)
+	defer conn_pair_close(&p)
+	if !ok do return
+
+	net.set_option(p.lb.server, .Receive_Timeout, 100 * time.Millisecond)
+
+	f1 := client_frame(.Text, false, transmute([]u8)string("frag-"))
+	defer delete(f1)
+	f2 := client_frame(.Continuation, true, transmute([]u8)string("one"))
+	defer delete(f2)
+	net.send_tcp(p.lb.client, f1)
+
+	Late :: struct { sock: net.TCP_Socket, data: []u8 }
+	late := Late{p.lb.client, f2}
+	sender := thread.create_and_start_with_poly_data(&late, proc(d: ^Late) {
+		time.sleep(300 * time.Millisecond) // outlasts the receive timeout
+		net.send_tcp(d.sock, d.data)
+	})
+	defer thread.destroy(sender)
+
+	msg, err := ws_read_message(&p.server_ws)
+	thread.join(sender)
+
+	testing.expect_value(t, err, Conn_Error.None)
+	testing.expect_value(t, string(msg.payload), "frag-one")
+}

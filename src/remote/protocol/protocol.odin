@@ -2,6 +2,12 @@ package protocol
 
 PROTOCOL_VERSION :: 1
 
+// Close codes, see docs/remote-protocol.md section 11.
+CLOSE_GOING_AWAY          :: 1001
+CLOSE_UNSUPPORTED_DATA    :: 1003 // binary frame
+CLOSE_HANDSHAKE_REQUIRED  :: 4000 // first message wasn't a valid hello
+CLOSE_UNSUPPORTED_VERSION :: 4001
+
 Error_Code :: enum {
 	Bad_Request,
 	Unknown_Method,

@@ -6,6 +6,7 @@ import im "libs:odin-imgui"
 
 import "../action"
 import "../capture"
+import "../config"
 import "../show"
 import "../audio"
 
@@ -28,6 +29,7 @@ State :: struct {
 draw :: proc(
     state: ^State,
     show_cfg: ^show.Show,
+    app_cfg: ^config.App_Config,
     clear_color: ^im.Vec4,
     preview_tex: im.TextureRef,
     outputs: []capture.Output_Info,
@@ -47,7 +49,7 @@ draw :: proc(
     draw_sources(&state.sources, &state.scenes, show_cfg, outputs, canvas_w, canvas_h, audio_devices, state.actions)
     draw_mixer(&state.mixer, &state.scenes, show_cfg, state.actions)
 
-    draw_modals(state, show_cfg, outputs, state.controls.streaming)
+    draw_modals(state, show_cfg, app_cfg, outputs, state.controls.streaming)
 }
 
 init_state :: proc(version: string, actions: ^action.Envelope_Queue) -> State {

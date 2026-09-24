@@ -53,6 +53,10 @@ echo === websocket ===
 odin test libs/websocket %FLAGS%
 if errorlevel 1 set FAILED=1
 
+echo === streamdeck plugin ===
+odin test streamdeck/src %FLAGS%
+if errorlevel 1 set FAILED=1
+
 if %FAILED%==1 (
     echo.
     echo === TESTS FAILED ===

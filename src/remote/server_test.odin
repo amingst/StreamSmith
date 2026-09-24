@@ -1,90 +1,9 @@
 package remote
 
-import ws "libs:websocket"
-import "base:runtime"
-import "core:net"
 import "core:sync"
 import "core:testing"
-import "core:time"
 
-import "../action"
 import "protocol"
-
-@(private="file")
-Harness :: struct {
-	queue:  action.Envelope_Queue,
-	server: Server,
-	batch:  [dynamic]action.Envelope,
-	port:   u16,
-}
-
-@(private="file")
-harness_open :: proc(t: ^testing.T, h: ^Harness, port: u16) -> bool {
-	h.port = port
-	action.queue_init(&h.queue)
-	h.server = server_init(Server_Config{port = port, server_name = "test"}, &h.queue, runtime.default_allocator())
-	return testing.expectf(t, server_start(&h.server), "server_start failed on port %v", port)
-}
-
-@(private="file")
-harness_close :: proc(h: ^Harness) {
-	server_stop(&h.server)
-	action.queue_destroy(&h.queue, &h.batch)
-}
-
-@(private="file")
-Peer :: struct {
-	sock: net.TCP_Socket,
-	conn: ws.WS_Connection,
-	buf:  [dynamic]u8,
-}
-
-@(private="file")
-peer_connect :: proc(t: ^testing.T, h: ^Harness, peer: ^Peer) -> bool {
-	ep := net.Endpoint{address = net.IP4_Loopback, port = int(h.port)}
-
-	dial_err: net.Network_Error
-	peer.sock, dial_err = net.dial_tcp(ep)
-	if !testing.expect_value(t, dial_err, nil) do return false
-	net.set_option(peer.sock, .Receive_Timeout, 2 * time.Second)
-
-	leftover: []u8
-	hs_err: ws.Handshake_Error
-	peer.buf, leftover, hs_err = ws.client_upgrade(peer.sock, "127.0.0.1")
-	if !testing.expect_value(t, hs_err, ws.Handshake_Error.None) do return false
-
-	ws.conn_init(&peer.conn, peer.sock, .Client, MAX_MESSAGE, leftover)
-	return true
-}
-
-@(private="file")
-peer_close :: proc(peer: ^Peer) {
-	ws.conn_destroy(&peer.conn)
-	delete(peer.buf)
-	if peer.sock != 0 do net.close(peer.sock)
-}
-
-@(private="file")
-peer_expect_text :: proc(t: ^testing.T, peer: ^Peer, want: string) {
-	msg, err := ws.ws_read_message(&peer.conn)
-	if !testing.expectf(t, err == .None, "read: %v", err) do return
-	testing.expect_value(t, string(msg.payload), want)
-}
-
-@(private="file")
-await_clients :: proc(h: ^Harness, count: int) {
-	for _ in 0 ..< 200 {
-		if client_count(&h.server) == count do return
-		time.sleep(5 * time.Millisecond)
-	}
-}
-
-@(private="file")
-first_client :: proc(h: ^Harness) -> ^Client {
-	sync.guard(&h.server.clients_mu)
-	if len(h.server.clients) == 0 do return nil
-	return h.server.clients[0]
-}
 
 @(test)
 start_and_stop_with_a_client :: proc(t: ^testing.T) {
